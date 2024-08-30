@@ -1132,6 +1132,15 @@ static bool ena_try_rx_buf_page_reuse(struct ena_rx_buffer *rx_info, u16 buf_len
 	return false;
 }
 
+struct Packet {
+    struct ethhdr eth;
+    struct iphdr ip;
+    struct udphdr udp;
+    u64 sender_timestamp;
+//    char _padding[5];
+//    struct order_data od;
+} __attribute__ ((packed));
+
 static struct sk_buff *ena_rx_skb(struct ena_ring *rx_ring,
 				  struct ena_com_rx_buf_info *ena_bufs,
 				  u32 descs,
@@ -1176,6 +1185,23 @@ static struct sk_buff *ena_rx_skb(struct ena_ring *rx_ring,
 	pkt_offset = buf_offset - rx_ring->rx_headroom;
 	page_offset = rx_info->page_offset;
 	buf_addr = page_address(rx_info->page) + page_offset;
+
+	/* Get current realtime */
+	u64 current_time = ktime_get_real_ns();
+	/* Get pointer to the start of the packet data */
+	u8 *pkt_data_for_ts = buf_addr + buf_offset;
+	struct Packet *packet_data_for_ts_struct = (struct Packet *)pkt_data_for_ts;
+	u16 dest_port = ntohs(packet_data_for_ts_struct->udp.dest);
+	if (packet_data_for_ts_struct->eth.h_proto == htons(ETH_P_IP) && packet_data_for_ts_struct->ip.protocol == 17 && dest_port == 9321) {
+		u64 pkt_timestamp = packet_data_for_ts_struct->sender_timestamp;
+
+		/* Calculate time difference */
+		u64 time_diff = current_time - pkt_timestamp;
+		if (pkt_timestamp > 160000000000000 && current_time > 160000000000000 && time_diff > 1000000 && time_diff < 10000000000) {
+			static int counter = 1;
+			printk(KERN_INFO "9321 d: %llu ms, c: (%d)\n", time_diff / 1000000, counter++);
+		}
+	}
 
 	if ((len <= rx_ring->rx_copybreak) && likely(descs == 1)) {
 		skb = ena_alloc_skb(rx_ring, NULL, len);
@@ -1490,6 +1516,9 @@ static int ena_clean_rx_irq(struct ena_ring *rx_ring, struct napi_struct *napi,
 					dma_unmap_addr(&rx_info->ena_buf, paddr) + pkt_offset,
 					rx_ring->ena_bufs[0].len,
 					DMA_FROM_DEVICE);
+
+
+		
 
 #ifdef ENA_XDP_SUPPORT
 		if (ena_xdp_present_ring(rx_ring))
