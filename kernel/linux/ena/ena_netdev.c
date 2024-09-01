@@ -1199,7 +1199,12 @@ static struct sk_buff *ena_rx_skb(struct ena_ring *rx_ring,
 		u64 time_diff = current_time - pkt_timestamp;
 		if (pkt_timestamp > 160000000000000 && current_time > 160000000000000 && time_diff > 1000000 && time_diff < 10000000000) {
 			static int counter = 1;
-			printk(KERN_INFO "9321 d: %llu ms, c: (%d)\n", time_diff / 1000000, counter++);
+			static u64 last_log = 0;
+			++counter;
+			if(current_time - last_log > 1000000000) {
+				last_log = current_time;
+				printk(KERN_INFO "9321 d: %llu ms, c: (%d)\n", time_diff / 1000000, counter);
+			}
 		}
 	}
 
